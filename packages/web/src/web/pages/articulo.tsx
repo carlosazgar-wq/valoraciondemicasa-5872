@@ -200,8 +200,7 @@ export default function ArticuloPage() {
             <a href="/"><Logo size={32} /></a>
             <div className="flex gap-6 text-sm text-gray-500">
               <a href="/privacidad" className="hover:text-[#10b981] transition-colors">Política de Privacidad</a>
-              <a href="/aviso-legal" className="hover:text-[#10b981] transition-colors">Aviso Legal</a>
-            </div>
+              <a href="/aviso-legal" className="hover:text-[#10b981] transition-colors">   Aviso Legal</a><a href="/cookies" className="hover:text-[#10b981] transition-colors">Cookies</a></div>
             <p className="text-gray-600 text-xs">© 2026 valoraciondemicasa.es · Todos los derechos reservados</p>
           </div>
         </div>
