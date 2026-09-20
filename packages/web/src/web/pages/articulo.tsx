@@ -155,10 +155,7 @@ export default function ArticuloPage() {
           <h3 className="text-2xl font-black text-white mb-3">
             ¿Quieres saber cuánto vale tu vivienda?
           </h3>
-          <p className="text-gray-400 mb-6">Valoración gratuita en menos de 2 minutos</p>
-          
-                      
-            href="/#formulario"
+          <p className="text-gray-400 mb-6">Valoración gratuita en menos de 2 minutos</p><a href="/#formulario"
             className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-black text-lg shadow-xl shadow-[#10b981]/30 hover:from-[#059669] hover:to-[#047857] transition-all"
           >
             Calcular valor gratis
