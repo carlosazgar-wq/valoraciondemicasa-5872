@@ -2,10 +2,52 @@ import { Hono } from 'hono';
 import { cors } from "hono/cors";
 import { db } from './database';
 import * as schema from './database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Resend } from 'resend';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Autenticación del panel de administración (/admin).
+//
+// El panel de leads contiene datos personales (nombre, teléfono, email,
+// dirección) de cada visitante que ha usado el formulario. Antes, la
+// "contraseña" solo se comprobaba en el navegador y los endpoints
+// GET/PATCH/DELETE de /leads eran públicos: cualquiera que conociera la URL
+// podía leer, modificar o borrar todos los leads sin autenticarse.
+//
+// Ahora la contraseña se valida en el servidor (nunca viaja en el bundle de
+// JS) y, si es correcta, se emite un token firmado con HMAC-SHA256 que el
+// panel debe enviar en la cabecera Authorization en cada petición protegida.
+// ─────────────────────────────────────────────────────────────────────────
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? process.env.ADMIN_PASSWORD ?? '';
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+function signAdminToken(): string {
+  const expires = Date.now() + SESSION_TTL_MS;
+  const payload = `${expires}`;
+  const sig = createHmac('sha256', ADMIN_SESSION_SECRET).update(payload).digest('hex');
+  return Buffer.from(`${payload}.${sig}`).toString('base64url');
+}
+
+function verifyAdminToken(token: string | undefined | null): boolean {
+  if (!token || !ADMIN_SESSION_SECRET) return false;
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+    const [payload, sig] = decoded.split('.');
+    if (!payload || !sig) return false;
+    const expectedSig = createHmac('sha256', ADMIN_SESSION_SECRET).update(payload).digest('hex');
+    const a = Buffer.from(sig, 'hex');
+    const b = Buffer.from(expectedSig, 'hex');
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
+    return Date.now() < Number(payload);
+  } catch {
+    return false;
+  }
+}
 
 function generarEmailHTML(data: {
   nombre: string;
@@ -207,34 +249,80 @@ const app = new Hono()
   .use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }))
   .get('/health', (c) => c.json({ status: 'ok' }, 200))
 
-  // Proxy Google Places Autocomplete — evita exponer la API key en el frontend
+  // Login del panel de administración: la contraseña se valida aquí, en el
+  // servidor, y nunca se envía al navegador (a diferencia del esquema
+  // anterior, que la comparaba en el propio JS del cliente).
+  .post('/admin/login', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (!ADMIN_PASSWORD) {
+        return c.json({ success: false, error: 'ADMIN_PASSWORD no configurado en el servidor' }, 500);
+      }
+      if (typeof body.password !== 'string' || body.password !== ADMIN_PASSWORD) {
+        return c.json({ success: false, error: 'Contraseña incorrecta' }, 401);
+      }
+      return c.json({ success: true, token: signAdminToken() }, 200);
+    } catch {
+      return c.json({ success: false, error: 'Error de login' }, 500);
+    }
+  })
+
+  // Número total de valoraciones realizadas — endpoint público de solo
+  // agregado (sin datos personales) para mostrar prueba social real en la
+  // home en lugar de cifras inventadas.
+  .get('/leads/count', async (c) => {
+    try {
+      const [row] = await db.select({ count: sql<number>`count(*)` }).from(schema.leads);
+      return c.json({ count: Number(row?.count ?? 0) }, 200);
+    } catch {
+      return c.json({ count: 0 }, 200);
+    }
+  })
+
+  // Proxy Geoapify Address Autocomplete — evita exponer la API key en el frontend
+  // Sesgado hacia Madrid noroeste (Pozuelo/Aravaca/Las Rozas/Majadahonda/Boadilla/Alcobendas)
+  // pero sin restringir a esa zona: cualquier dirección de España sigue apareciendo.
   .get('/places', async (c) => {
     try {
       const q = c.req.query('q');
       if (!q || q.length < 2) return c.json({ predictions: [] }, 200);
-      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-      if (!apiKey) return c.json({ predictions: [] }, 200);
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(q)}&types=address&components=country:es&language=es&key=${apiKey}`;
+      const apiKey = process.env.GEOAPIFY_API_KEY;
+      // Antes, si faltaba la clave, se devolvía { predictions: [] } — igual
+      // que una búsqueda sin resultados. El usuario veía "Sin resultados"
+      // sin forma de saber que el buscador estaba caído, no que su
+      // dirección no existiera. Ahora se distingue con `serviceDown` para
+      // que el formulario pueda mostrar un aviso honesto.
+      if (!apiKey) return c.json({ predictions: [], serviceDown: true }, 200);
+      const url = `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(q)}&filter=countrycode:es&bias=proximity:-3.79,40.475&lang=es&format=json&limit=5&apiKey=${apiKey}`;
       const res = await fetch(url);
+      if (!res.ok) return c.json({ predictions: [], serviceDown: true }, 200);
       const data = await res.json() as any;
-      return c.json({ predictions: data.predictions ?? [] }, 200);
+      const predictions = (data.results ?? []).map((r: any) => {
+        const mainText = [r.street, r.housenumber].filter(Boolean).join(' ') || r.address_line1 || r.formatted || '';
+        const secondaryText = [r.postcode, r.city].filter(Boolean).join(' ') || r.address_line2 || '';
+        return {
+          place_id: Buffer.from(JSON.stringify({
+            street: r.street ?? '', housenumber: r.housenumber ?? '', postcode: r.postcode ?? '',
+            city: r.city ?? r.county ?? r.state ?? '', lat: r.lat ?? 0, lon: r.lon ?? 0,
+          })).toString('base64'),
+          description: r.formatted ?? [mainText, secondaryText].filter(Boolean).join(', '),
+          structured_formatting: { main_text: mainText, secondary_text: secondaryText },
+        };
+      });
+      return c.json({ predictions }, 200);
     } catch (e) {
       console.error('Places error:', e);
-      return c.json({ predictions: [] }, 200);
+      return c.json({ predictions: [], serviceDown: true }, 200);
     }
   })
 
-  // Proxy Google Places Details — obtiene lat/lng y campos de dirección
+  // Decodifica el place_id (que ya contiene los datos completos de Geoapify, sin llamada extra)
   .get('/places/detail', async (c) => {
     try {
       const placeId = c.req.query('place_id');
       if (!placeId) return c.json({ result: null }, 200);
-      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-      if (!apiKey) return c.json({ result: null }, 200);
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=geometry,address_components,formatted_address&language=es&key=${apiKey}`;
-      const res = await fetch(url);
-      const data = await res.json() as any;
-      return c.json({ result: data.result ?? null }, 200);
+      const decoded = JSON.parse(Buffer.from(placeId, 'base64').toString('utf-8'));
+      return c.json({ result: decoded }, 200);
     } catch (e) {
       console.error('Places detail error:', e);
       return c.json({ result: null }, 200);
@@ -258,12 +346,17 @@ const app = new Hono()
         habitaciones: body.habitaciones,
         banos: body.banos,
         planta: body.planta ?? null,
+        puerta: body.puerta ?? null,
         estado: body.estado,
         extras: body.extras ? JSON.stringify(body.extras) : null,
         valorEstimadoMin: body.valorEstimadoMin ?? null,
         valorEstimadoMax: body.valorEstimadoMax ?? null,
         valorEstimado: body.valorEstimado ?? null,
-        consentimientoCesion: body.consentimientoCesion ?? true,
+        // Antes por defecto era `true`: si el campo llegaba vacío se asumía
+        // consentimiento. El RGPD exige consentimiento expreso (checkbox
+        // desmarcado por defecto), así que ahora el valor por defecto es
+        // "no autorizado" si no se recibe explícitamente `true`.
+        consentimientoCesion: body.consentimientoCesion === true,
         ip,
       }).returning();
       return c.json({ success: true, lead }, 201);
@@ -273,8 +366,39 @@ const app = new Hono()
     }
   })
 
+  // Endpoint público y acotado: el propio usuario, justo después de ver su
+  // valoración, puede pedir que le llamen. Solo puede mover SU lead (por id,
+  // guardado en su sessionStorage al crearlo) de "nuevo" a "contactado" —
+  // a diferencia del PATCH genérico de abajo, no permite leer, borrar ni
+  // escribir notas internas, así que no sirve para manipular otros leads
+  // más allá de marcarlos como que alguien pidió que le llamaran.
+  .post('/leads/:id/solicitar-llamada', async (c) => {
+    try {
+      const id = parseInt(c.req.param('id'));
+      if (!Number.isFinite(id)) return c.json({ success: false }, 400);
+      const [lead] = await db.update(schema.leads)
+        .set({ estado_lead: 'contactado' })
+        .where(eq(schema.leads.id, id))
+        .returning();
+      return c.json({ success: !!lead }, 200);
+    } catch {
+      return c.json({ success: false }, 500);
+    }
+  })
+
+  // ── A partir de aquí, todo requiere sesión de administrador ──
+  // (el panel /admin contiene nombre, teléfono, email y dirección de cada
+  // visitante — antes estos tres endpoints eran públicos, sin ninguna
+  // comprobación, y cualquiera que conociera la URL podía leer, editar o
+  // borrar todos los leads. La comprobación se hace al principio de cada
+  // handler, no vía middleware compartido, para que no dependa del orden
+  // de registro de rutas.)
+
   // Listar leads (admin)
   .get('/leads', async (c) => {
+    const auth = c.req.header('authorization') ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!verifyAdminToken(token)) return c.json({ success: false, error: 'No autorizado' }, 401);
     try {
       const leads = await db.select().from(schema.leads).orderBy(schema.leads.id);
       return c.json({ leads: leads.reverse() }, 200);
@@ -283,8 +407,11 @@ const app = new Hono()
     }
   })
 
-  // Actualizar estado lead
+  // Actualizar estado lead / notas internas (admin)
   .patch('/leads/:id', async (c) => {
+    const auth = c.req.header('authorization') ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!verifyAdminToken(token)) return c.json({ success: false, error: 'No autorizado' }, 401);
     try {
       const id = parseInt(c.req.param('id'));
       const body = await c.req.json();
@@ -298,8 +425,11 @@ const app = new Hono()
     }
   })
 
-  // Eliminar lead
+  // Eliminar lead (admin)
   .delete('/leads/:id', async (c) => {
+    const auth = c.req.header('authorization') ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!verifyAdminToken(token)) return c.json({ success: false, error: 'No autorizado' }, 401);
     try {
       const id = parseInt(c.req.param('id'));
       await db.delete(schema.leads).where(eq(schema.leads.id, id));
