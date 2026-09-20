@@ -2,7 +2,15 @@ import { Route, Switch } from "wouter";
 import Index from "./pages/index";
 import ResultadoPage from "./pages/resultado";
 import AdminPage from "./pages/admin";
+import ZonaPage from "./pages/zona";
+import BarrioPage from "./pages/barrio";
+import BlogPage from "./pages/blog";
+import ArticuloPage from "./pages/articulo";
+import PrivacidadPage from "./pages/privacidad";
+import AvisoLegalPage from "./pages/aviso-legal";
+import CookiesPage from "./pages/cookies";
 import { Provider } from "./components/provider";
+import { CookieConsent } from "./components/CookieConsent";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 import { Component, type ReactNode } from "react";
 
@@ -42,7 +50,15 @@ function App() {
           <Route path="/" component={Index} />
           <Route path="/resultado" component={ResultadoPage} />
           <Route path="/admin" component={AdminPage} />
+          <Route path="/zona/:slug" component={ZonaPage} />
+          <Route path="/barrio/:slug" component={BarrioPage} />
+          <Route path="/blog" component={BlogPage} />
+          <Route path="/blog/:slug" component={ArticuloPage} />
+          <Route path="/privacidad" component={PrivacidadPage} />
+          <Route path="/aviso-legal" component={AvisoLegalPage} />
+          <Route path="/cookies" component={CookiesPage} />
         </Switch>
+        <CookieConsent />
         {import.meta.env.DEV && <AgentFeedback />}
         {<RunableBadge />}
       </Provider>
