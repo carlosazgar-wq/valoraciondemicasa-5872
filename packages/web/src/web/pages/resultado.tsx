@@ -396,11 +396,11 @@ export default function ResultadoPage() {
                     try {
                       const leadId = sessionStorage.getItem('valoracion_lead_id');
                       if (leadId) {
-                        await fetch(`/api/leads/${leadId}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ estado_lead: 'contactado' }),
-                        });
+                        // Endpoint público y acotado: solo marca ESTE lead
+                        // como "contactado", no permite leer ni editar nada
+                        // más (a diferencia del PATCH genérico, que ahora
+                        // requiere sesión de administrador).
+                        await fetch(`/api/leads/${leadId}/solicitar-llamada`, { method: 'POST' });
                       }
                     } catch {}
                   }}
