@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
 import { Logo } from "../components/Logo";
 import { formatCurrency } from "../lib/valoracion";
 import {
   Users, TrendingUp, Phone, Mail, MapPin, Home,
-  Download, Search, Filter, Trash2, Edit3, Check, X, ChevronDown, Eye
+  Download, Search, Filter, Trash2, Edit3, Check, X, ChevronDown, Eye, CheckSquare
 } from "lucide-react";
 
 type Lead = {
@@ -145,6 +144,9 @@ function LeadRow({ lead, onUpdate, onDelete }: {
                 { icon: MapPin, label: "Dirección", value: lead.direccion },
                 { icon: Home, label: "Inmueble", value: `${lead.tipoInmueble} · ${lead.superficie}m² · ${lead.habitaciones}hab · ${lead.banos}baños` },
                 { icon: TrendingUp, label: "Estado", value: lead.estado },
+                ...(lead.planta ? [{ icon: Home, label: "Planta", value: lead.planta }] : []),
+                ...(lead.puerta ? [{ icon: Home, label: "Puerta", value: lead.puerta }] : []),
+                ...(lead.extras ? [{ icon: CheckSquare, label: "Extras", value: (() => { try { return JSON.parse(lead.extras).join(", ") || "Ninguno"; } catch { return "Ninguno"; } })() }] : []),
               ].map(row => (
                 <div key={row.label} className="bg-[#0a0f1e] rounded-xl p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -220,15 +222,97 @@ function LeadRow({ lead, onUpdate, onDelete }: {
   );
 }
 
-const ADMIN_PASSWORD = "vdmc2026";
+// La contraseña ya NO vive aquí ni en ningún archivo del frontend: se
+// valida en el servidor contra ADMIN_PASSWORD (variable de entorno) y, si
+// es correcta, el servidor devuelve un token firmado que este panel guarda
+// en sessionStorage y envía en cada petición protegida. Antes la
+// contraseña estaba escrita en texto plano en este mismo bundle de JS —
+// visible para cualquiera que abriera las herramientas de desarrollador —
+// y además no protegía nada, porque los endpoints de la API no la
+// comprobaban en absoluto.
+function authHeaders(): Record<string, string> {
+  const token = sessionStorage.getItem('admin_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
-  const [autenticado, setAutenticado] = useState(() => sessionStorage.getItem('admin_auth') === ADMIN_PASSWORD);
+  const [autenticado, setAutenticado] = useState(() => !!sessionStorage.getItem('admin_token'));
   const [passInput, setPassInput] = useState("");
   const [passError, setPassError] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  const intentarLogin = async () => {
+    setLoggingIn(true);
+    setPassError(false);
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passInput }),
+      });
+      const data = await res.json();
+      if (data.success && data.token) {
+        sessionStorage.setItem('admin_token', data.token);
+        setAutenticado(true);
+      } else {
+        setPassError(true);
+      }
+    } catch {
+      setPassError(true);
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const cerrarSesion = () => {
+    sessionStorage.removeItem('admin_token');
+    setAutenticado(false);
+  };
+
+  // Importante: los hooks de React tienen que llamarse siempre, en el mismo
+  // orden, en cada renderizado. Antes, estas tres llamadas (useQuery +
+  // 2×useMutation) estaban DESPUÉS de un `return` condicional para cuando
+  // no había sesión — es decir, en el primer render (sin autenticar) no se
+  // llamaban, y justo al iniciar sesión correctamente, en el render
+  // siguiente, sí. Eso rompe las reglas de los Hooks de React y provoca un
+  // error ("Rendered more hooks than during the previous render") justo en
+  // el momento de entrar con la contraseña correcta. Ahora se llaman
+  // siempre, y `enabled: autenticado` evita que se disparen peticiones
+  // antes de tener sesión.
+  const leadsQuery = useQuery({
+    queryKey: ["leads"],
+    enabled: autenticado,
+    queryFn: async () => {
+      const res = await fetch('/api/leads', { headers: authHeaders() });
+      if (res.status === 401) { cerrarSesion(); return { leads: [] }; }
+      return res.json();
+    },
+  });
+
+  const updateLead = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (res.status === 401) cerrarSesion();
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads"] }),
+  });
+
+  const deleteLead = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/leads/${id}`, { method: 'DELETE', headers: authHeaders() });
+      if (res.status === 401) cerrarSesion();
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads"] }),
+  });
 
   if (!autenticado) {
     return (
@@ -243,59 +327,20 @@ export default function AdminPage() {
             placeholder="Contraseña"
             value={passInput}
             onChange={e => { setPassInput(e.target.value); setPassError(false); }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                if (passInput === ADMIN_PASSWORD) {
-                  sessionStorage.setItem('admin_auth', ADMIN_PASSWORD);
-                  setAutenticado(true);
-                } else setPassError(true);
-              }
-            }}
+            onKeyDown={e => { if (e.key === 'Enter') intentarLogin(); }}
           />
           {passError && <p className="text-red-400 text-xs mb-3">Contraseña incorrecta</p>}
           <button
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-bold"
-            onClick={() => {
-              if (passInput === ADMIN_PASSWORD) {
-                sessionStorage.setItem('admin_auth', ADMIN_PASSWORD);
-                setAutenticado(true);
-              } else setPassError(true);
-            }}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-bold disabled:opacity-60"
+            disabled={loggingIn}
+            onClick={intentarLogin}
           >
-            Acceder
+            {loggingIn ? "Comprobando..." : "Acceder"}
           </button>
         </div>
       </div>
     );
   }
-
-  const leadsQuery = useQuery({
-    queryKey: ["leads"],
-    queryFn: async () => {
-      const res = await api.leads.$get();
-      return res.json();
-    },
-  });
-
-  const updateLead = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const res = await fetch(`/api/leads/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      return res.json();
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads"] }),
-  });
-
-  const deleteLead = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
-      return res.json();
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads"] }),
-  });
 
   const leads: Lead[] = (leadsQuery.data as any)?.leads ?? [];
 
@@ -344,12 +389,18 @@ export default function AdminPage() {
             >
               <Download size={15} /> Exportar CSV
             </button>
-            <a
+            
               href="/"
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1f2937] text-gray-300 text-sm font-medium hover:text-white transition-colors"
             >
               Ver web
             </a>
+            <button
+              onClick={cerrarSesion}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1f2937] text-gray-300 text-sm font-medium hover:text-white transition-colors"
+            >
+              Cerrar sesión
+            </button>
           </div>
         </div>
       </nav>
