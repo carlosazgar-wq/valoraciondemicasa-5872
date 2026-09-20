@@ -95,13 +95,13 @@ function parseGoogleDetail(result: any): {
 
 function useDireccionSuggestions(query: string) {
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); const [serviceDown, setServiceDown] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (query.length < 2) { setSuggestions([]); setLoading(false); return; }
+    if (query.length < 2) { setSuggestions([]); setLoading(false); setServiceDown(false); return; }
     setLoading(true);
     timerRef.current = setTimeout(async () => {
       if (abortRef.current) abortRef.current.abort();
@@ -109,9 +109,9 @@ function useDireccionSuggestions(query: string) {
       try {
         const res = await fetch(`/api/places?q=${encodeURIComponent(query)}`, { signal: abortRef.current.signal });
         const data = await res.json();
-        setSuggestions(data.predictions ?? []);
+        setSuggestions(data.predictions ?? []); setServiceDown(!!data.serviceDown);
       } catch (e: any) {
-        if (e.name !== 'AbortError') setSuggestions([]);
+        if (e.name !== 'AbortError') { setSuggestions([]); setServiceDown(true); }
       } finally {
         setLoading(false);
       }
@@ -119,7 +119,7 @@ function useDireccionSuggestions(query: string) {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [query]);
 
-  return { suggestions, loading };
+  return { suggestions, loading, serviceDown };
 }
 
 function MiniMap({ lat, lng }: { lat: number; lng: number; direccion: string }) {
@@ -168,7 +168,7 @@ const INITIAL_DATA: FormData = {
   tipoInmueble: "", superficie: "", planta: "segundo",
   habitaciones: "", banos: "", extras: [],
   estado: "",
-  nombre: "", telefono: "", email: "", consentimientoCesion: true,
+  nombre: "", telefono: "", email: "", consentimientoCesion: false,
 };
 
 export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
@@ -178,7 +178,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
   const [calleConfirmada, setCalleConfirmada] = useState(false);
   const calleInputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-  const { suggestions, loading: loadingSuggestions } = useDireccionSuggestions(calleQuery);
+  const { suggestions, loading: loadingSuggestions, serviceDown } = useDireccionSuggestions(calleQuery);
 
   const [data, setData] = useState<FormData>({ ...INITIAL_DATA });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -440,7 +440,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                 </p>
               )}
 
-              {showSuggestions && (loadingSuggestions || suggestions.length > 0 || calleQuery.length >= 3) && (
+              {showSuggestions && (loadingSuggestions || suggestions.length > 0 || calleQuery.length >= 3 || serviceDown) && (
                 <div
                   ref={suggestionsRef}
                   className="absolute z-50 left-0 right-0 mt-2 rounded-2xl overflow-hidden"
@@ -476,7 +476,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                       </button>
                     );
                   })}
-                  {!loadingSuggestions && suggestions.length === 0 && calleQuery.length >= 3 && (
+                  {!loadingSuggestions && suggestions.length === 0 && serviceDown && calleQuery.length >= 2 && (<div className="px-5 py-5 text-center"><p className="text-sm font-medium" style={{ color: '#fbbf24' }}>El buscador de direcciones no está disponible ahora mismo</p><p className="text-xs mt-1" style={{ color: '#475569' }}>No es un error tuyo — puedes seguir escribiendo la calle, el número y el código postal a mano justo debajo, sin problema.</p></div>)}                   {!loadingSuggestions && suggestions.length === 0 && !serviceDown && calleQuery.length >= 3 && (
                     <div className="px-5 py-5 text-center">
                       <p className="text-sm font-medium" style={{ color: '#94a3b8' }}>
                         Sin resultados para "<span style={{ color: '#f1f5f9' }}>{calleQuery}</span>"
@@ -486,8 +486,8 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                   )}
                   {suggestions.length > 0 && (
                     <div className="px-4 py-2 flex items-center justify-end gap-1.5" style={{ background: 'rgba(0,0,0,0.3)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                      <span className="text-xs" style={{ color: '#475569' }}>powered by</span>
-                      <svg height="14" viewBox="0 0 74 24" xmlns="http://www.w3.org/2000/svg"><path d="M9.24 8.19c0-.52-.04-1.02-.12-1.5H4.7v2.84h2.56c-.11.6-.44 1.1-.95 1.44v1.2h1.54c.9-.83 1.42-2.06 1.42-3.48 0 .5.01.5 0 0z" fill="#4285F4"/><path d="M4.7 13.5c1.28 0 2.36-.42 3.14-1.15l-1.54-1.2c-.42.28-.97.45-1.6.45-1.23 0-2.27-.83-2.64-1.95H.47v1.24C1.24 12.61 2.86 13.5 4.7 13.5z" fill="#34A853"/><path d="M2.06 9.65A3.74 3.74 0 0 1 1.87 8.5c0-.4.07-.8.19-1.15V6.11H.47A6.26 6.26 0 0 0 .04 8.5c0 1 .24 1.96.43 2.39l1.59-1.24z" fill="#FBBC05"/><path d="M4.7 4.9c.7 0 1.32.24 1.82.71l1.36-1.36A5.6 5.6 0 0 0 4.7 2.5 5.77 5.77 0 0 0 .47 6.11l1.59 1.24C2.43 5.73 3.47 4.9 4.7 4.9z" fill="#EA4335"/><path d="M30.94 9.77c0 3.36-2.56 5.84-5.72 5.84-3.15 0-5.72-2.48-5.72-5.84C19.5 6.4 22.07 3.9 25.22 3.9c3.16 0 5.72 2.5 5.72 5.87zm-2.5 0c0-2.1-1.52-3.53-3.22-3.53-1.7 0-3.22 1.43-3.22 3.53 0 2.08 1.52 3.54 3.22 3.54 1.7 0 3.22-1.46 3.22-3.54z" fill="#EA4335"/><path d="M43.94 9.77c0 3.36-2.56 5.84-5.72 5.84-3.15 0-5.72-2.48-5.72-5.84C32.5 6.4 35.07 3.9 38.22 3.9c3.16 0 5.72 2.5 5.72 5.87zm-2.5 0c0-2.1-1.52-3.53-3.22-3.53-1.7 0-3.22 1.43-3.22 3.53 0 2.08 1.52 3.54 3.22 3.54 1.7 0 3.22-1.46 3.22-3.54z" fill="#FBBC05"/><path d="M56.44 4.24v10.97c0 4.5-2.66 6.35-5.8 6.35-2.96 0-4.74-1.98-5.41-3.6l2.17-.9c.42 1 1.37 2.18 3.24 2.18 2.12 0 3.43-1.3 3.43-3.77v-.92h-.09c-.63.77-1.85 1.45-3.38 1.45-3.22 0-6.16-2.8-6.16-6.4 0-3.64 2.94-6.48 6.16-6.48 1.53 0 2.75.68 3.38 1.43h.09V4.24h2.37zm-2.2 5.57c0-2.06-1.37-3.57-3.12-3.57-1.77 0-3.25 1.51-3.25 3.57 0 2.04 1.48 3.52 3.25 3.52 1.75 0 3.12-1.48 3.12-3.52z" fill="#4285F4"/><path d="M61 .5v15h-2.44V.5H61z" fill="#34A853"/><path d="M70.3 11.48l1.94 1.3a5.67 5.67 0 0 1-4.76 2.53c-3.24 0-5.66-2.5-5.66-5.84 0-3.47 2.44-5.84 5.38-5.84 2.96 0 4.4 2.41 4.87 3.72l.26.65-7.63 3.16c.58 1.15 1.49 1.73 2.78 1.73 1.3 0 2.2-.64 2.82-1.41zm-5.99-2.06l5.1-2.12c-.28-.71-1.12-1.21-2.12-1.21-1.27 0-3.05 1.13-2.98 3.33z" fill="#EA4335"/></svg>
+                      <span className="text-xs" style={{ color: '#475569' }}>Direcciones por Geoapify</span>
+                      
                     </div>
                   )}
                 </div>
@@ -806,7 +806,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
 
               <p className="text-xs text-gray-500">
                 Al enviar aceptas nuestra{" "}
-                <a href="#" className="text-[#10b981] hover:underline">Política de Privacidad</a>.
+                <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="text-[#10b981] hover:underline">Política de Privacidad</a>.
                 Tus datos están protegidos conforme al RGPD.
               </p>
             </div>
