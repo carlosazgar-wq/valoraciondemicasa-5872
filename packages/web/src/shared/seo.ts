@@ -171,6 +171,21 @@ const RUTAS_FIJAS: Record<string, MetaRuta> = {
       "Artículos sobre precios de la vivienda en Madrid, tasación, impuestos al vender y consejos prácticos para vender tu piso al mejor precio.",
     canonical: `${BASE}/blog`,
   },
+  "/privacidad": {
+    title: "Política de Privacidad — ValoracionDeMiCasa.es",
+    description: "Cómo tratamos tus datos personales en ValoracionDeMiCasa.es, conforme al RGPD.",
+    canonical: `${BASE}/privacidad`,
+  },
+  "/aviso-legal": {
+    title: "Aviso Legal — ValoracionDeMiCasa.es",
+    description: "Datos identificativos, condiciones de uso y limitación de responsabilidad de ValoracionDeMiCasa.es.",
+    canonical: `${BASE}/aviso-legal`,
+  },
+  "/cookies": {
+    title: "Política de Cookies — ValoracionDeMiCasa.es",
+    description: "Qué cookies usa ValoracionDeMiCasa.es y cómo gestionar tu preferencia.",
+    canonical: `${BASE}/cookies`,
+  },
 };
 
 /** Devuelve los metadatos SEO de una ruta, o null si la ruta no es indexable. */
