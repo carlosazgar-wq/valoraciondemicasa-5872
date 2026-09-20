@@ -388,9 +388,7 @@ export default function AdminPage() {
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#10b981]/15 text-[#10b981] text-sm font-medium hover:bg-[#10b981]/25 transition-colors"
             >
               <Download size={15} /> Exportar CSV
-            </button>
-            
-              href="/"
+            </button><a href="/"
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1f2937] text-gray-300 text-sm font-medium hover:text-white transition-colors"
             >
               Ver web
