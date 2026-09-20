@@ -5,7 +5,7 @@ import { Calendar, Clock, ArrowLeft, ArrowRight } from "lucide-react";
 
 function inline(text: string) {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '<strongpolitica de privacidad class="text-white font-bold">$1</strong>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-[#10b981] font-semibold underline underline-offset-2 hover:text-[#34d399]">$1</a>');
 }
 
@@ -156,7 +156,7 @@ export default function ArticuloPage() {
             ¿Quieres saber cuánto vale tu vivienda?
           </h3>
           <p className="text-gray-400 mb-6">Valoración gratuita en menos de 2 minutos</p>
-          <a
+          
             href="/#formulario"
             className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-black text-lg shadow-xl shadow-[#10b981]/30 hover:from-[#059669] hover:to-[#047857] transition-all"
           >
