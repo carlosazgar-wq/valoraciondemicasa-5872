@@ -14,6 +14,7 @@ interface FormData {
   tipoInmueble: string;
   superficie: string;
   planta: string;
+  puerta: string;
   // Paso 3: Características
   habitaciones: string;
   banos: string;
@@ -41,6 +42,7 @@ const EXTRAS = [
   { id: "jardin", label: "Jardín", icon: "🌳" },
   { id: "portero", label: "Portero", icon: "💂" },
   { id: "gym", label: "Gimnasio", icon: "💪" },
+  { id: "padel", label: "Pádel", icon: "🎾" },
 ];
 
 const TIPOS = [
@@ -81,21 +83,26 @@ function safeExtras(v: unknown): string[] {
 function parseGoogleDetail(result: any): {
   road: string; numero: string; cp: string; ciudad: string; lat: number; lng: number;
 } {
-  const comps: any[] = result?.address_components ?? [];
-  const get = (type: string) => comps.find((c: any) => c.types.includes(type))?.long_name ?? "";
+  // Formato Geoapify (decodificado desde place_id en el backend)
   return {
-    road: get("route"),
-    numero: get("street_number"),
-    cp: get("postal_code"),
-    ciudad: get("locality") || get("administrative_area_level_2") || get("administrative_area_level_1") || "",
-    lat: result?.geometry?.location?.lat ?? 0,
-    lng: result?.geometry?.location?.lng ?? 0,
+    road: result?.street ?? "",
+    numero: result?.housenumber ?? "",
+    cp: result?.postcode ?? "",
+    ciudad: result?.city ?? "",
+    lat: result?.lat ?? 0,
+    lng: result?.lon ?? 0,
   };
 }
 
 function useDireccionSuggestions(query: string) {
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false); const [serviceDown, setServiceDown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // Antes, si el buscador de direcciones fallaba (p. ej. clave de API no
+  // configurada en producción), se mostraba "Sin resultados" exactamente
+  // igual que si la dirección no existiera — el usuario no podía distinguir
+  // un fallo del sistema de un error suyo. Ahora se distingue con
+  // `serviceDown` y se muestra un aviso honesto (ver más abajo).
+  const [serviceDown, setServiceDown] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -109,7 +116,8 @@ function useDireccionSuggestions(query: string) {
       try {
         const res = await fetch(`/api/places?q=${encodeURIComponent(query)}`, { signal: abortRef.current.signal });
         const data = await res.json();
-        setSuggestions(data.predictions ?? []); setServiceDown(!!data.serviceDown);
+        setSuggestions(data.predictions ?? []);
+        setServiceDown(!!data.serviceDown);
       } catch (e: any) {
         if (e.name !== 'AbortError') { setSuggestions([]); setServiceDown(true); }
       } finally {
@@ -163,11 +171,14 @@ function MiniMap({ lat, lng }: { lat: number; lng: number; direccion: string }) 
 }
 
 const INITIAL_DATA: FormData = {
-  calle: "", numero: "", codigoPostal: "", ciudad: "",
+  calle: "", numero: "", codigoPostal: "", ciudad: "Madrid",
   direccion: "", lat: null, lng: null,
-  tipoInmueble: "", superficie: "", planta: "segundo",
+  tipoInmueble: "", superficie: "", planta: "", puerta: "",
   habitaciones: "", banos: "", extras: [],
   estado: "",
+  // RGPD: el consentimiento tiene que ser una acción expresa del usuario,
+  // nunca asumido por defecto (un checkbox premarcado no es un
+  // consentimiento válido).
   nombre: "", telefono: "", email: "", consentimientoCesion: false,
 };
 
@@ -203,13 +214,16 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
     const e: Record<string, string> = {};
     if (p === 1) {
       if (!data.calle.trim()) e.calle = "Introduce la calle";
-      if (!data.numero.trim()) e.numero = "Indica el número";
+      if (!data.numero.trim()) e.numero = "Indica el número de la casa o del portal";
+      else if (!/\d/.test(data.numero)) e.numero = "El número debe contener alguna cifra";
       if (!data.codigoPostal.trim() || !/^\d{5}$/.test(data.codigoPostal.trim())) e.codigoPostal = "CP de 5 dígitos";
       if (!data.ciudad.trim()) e.ciudad = "Indica la ciudad";
     }
     if (p === 2) {
       if (!data.tipoInmueble) e.tipoInmueble = "Selecciona el tipo de inmueble";
       if (!data.superficie || parseInt(data.superficie) < 10) e.superficie = "Superficie mínima 10 m²";
+      if (!['adosado','chalet','casa'].includes(data.tipoInmueble) && data.tipoInmueble && !data.planta) e.planta = "Selecciona la planta";
+      if (data.tipoInmueble === 'piso' && !data.puerta.trim()) e.puerta = "Indica la puerta (A, B, Izquierda…)";
     }
     if (p === 3) {
       if (!data.habitaciones) e.habitaciones = "Indica el número de habitaciones";
@@ -407,7 +421,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                   autoComplete="off"
                   spellCheck={false}
                   className="flex-1 bg-transparent text-white py-4 pr-2 outline-none text-[15px] font-medium placeholder-[#3d5270]"
-                  placeholder="Gran Vía, Calle Mayor, Av. Diagonal…"
+                  placeholder="Gran Vía, Calle Mayor, Paseo de la Castellana…"
                   value={calleQuery}
                   onChange={e => handleCalleChange(e.target.value)}
                   onFocus={() => { if (calleQuery.length >= 2) setShowSuggestions(true); }}
@@ -476,7 +490,17 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                       </button>
                     );
                   })}
-                  {!loadingSuggestions && suggestions.length === 0 && serviceDown && calleQuery.length >= 2 && (<div className="px-5 py-5 text-center"><p className="text-sm font-medium" style={{ color: '#fbbf24' }}>El buscador de direcciones no está disponible ahora mismo</p><p className="text-xs mt-1" style={{ color: '#475569' }}>No es un error tuyo — puedes seguir escribiendo la calle, el número y el código postal a mano justo debajo, sin problema.</p></div>)}                   {!loadingSuggestions && suggestions.length === 0 && !serviceDown && calleQuery.length >= 3 && (
+                  {!loadingSuggestions && suggestions.length === 0 && serviceDown && calleQuery.length >= 2 && (
+                    <div className="px-5 py-5 text-center">
+                      <p className="text-sm font-medium" style={{ color: '#fbbf24' }}>
+                        El buscador de direcciones no está disponible ahora mismo
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: '#475569' }}>
+                        No es un error tuyo — puedes seguir escribiendo la calle, el número y el código postal a mano justo debajo, sin problema.
+                      </p>
+                    </div>
+                  )}
+                  {!loadingSuggestions && suggestions.length === 0 && !serviceDown && calleQuery.length >= 3 && (
                     <div className="px-5 py-5 text-center">
                       <p className="text-sm font-medium" style={{ color: '#94a3b8' }}>
                         Sin resultados para "<span style={{ color: '#f1f5f9' }}>{calleQuery}</span>"
@@ -485,9 +509,11 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                     </div>
                   )}
                   {suggestions.length > 0 && (
+                    // Atribución honesta: el buscador usa Geoapify, no Google
+                    // (antes se mostraba el logo de Google aquí, dando a
+                    // entender un origen de datos que no era el real).
                     <div className="px-4 py-2 flex items-center justify-end gap-1.5" style={{ background: 'rgba(0,0,0,0.3)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                       <span className="text-xs" style={{ color: '#475569' }}>Direcciones por Geoapify</span>
-                      
                     </div>
                   )}
                 </div>
@@ -533,7 +559,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                 style={{ background: '#16213a', border: errors.ciudad ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid #1e3a5f' }}
                 onFocus={e => (e.currentTarget.style.border = '1.5px solid rgba(99,179,237,0.4)')}
                 onBlur={e => (e.currentTarget.style.border = errors.ciudad ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid #1e3a5f')}
-                placeholder="Madrid, Barcelona, Sevilla…"
+                placeholder="Madrid"
                 value={data.ciudad}
                 onChange={e => updateDireccionField('ciudad', e.target.value)}
               />
@@ -603,11 +629,28 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                     Planta
                   </label>
                   <select className="form-input" value={data.planta} onChange={e => update('planta', e.target.value)}>
+                    <option value="">Selecciona la planta…</option>
                     {PLANTAS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
+                  {errors.planta && <p className="text-red-400 text-xs mt-1">{errors.planta}</p>}
                 </div>
               )}
             </div>
+            {data.tipoInmueble === 'piso' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Home size={14} className="inline mr-1 text-[#10b981]" />
+                  Puerta
+                </label>
+                <input
+                  type="text" className="form-input"
+                  placeholder="Ej: A, B, Izquierda, 3…"
+                  value={data.puerta}
+                  onChange={e => update('puerta', e.target.value)}
+                />
+                {errors.puerta && <p className="text-red-400 text-xs mt-1">{errors.puerta}</p>}
+              </div>
+            )}
           </div>
         )}
 
@@ -799,7 +842,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                     </div>
                   </div>
                   <span className="text-xs text-gray-400 leading-relaxed">
-                    Autorizo que mis datos sean cedidos a la <strong className="text-gray-300">inmobiliaria mejor valorada de la zona</strong> para que me contacten y realicen una valoración profesional gratuita y sin compromiso. La estimación online es orientativa; para conocer el valor exacto de tu vivienda te recomendamos una tasación profesional con el agente inmobiliario de mayor reputación en tu zona.
+                    Autorizo que mis datos sean cedidos a la <strong className="text-gray-300">inmobiliaria mejor valorada de tu distrito en Madrid</strong> para que me contacten y realicen una valoración profesional gratuita y sin compromiso. La estimación online es orientativa; para conocer el valor exacto de tu vivienda te recomendamos una tasación profesional con el agente inmobiliario de mayor reputación en tu zona de Madrid.
                   </span>
                 </label>
               </div>
