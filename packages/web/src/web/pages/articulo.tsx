@@ -157,6 +157,7 @@ export default function ArticuloPage() {
           </h3>
           <p className="text-gray-400 mb-6">Valoración gratuita en menos de 2 minutos</p>
           
+                      
             href="/#formulario"
             className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-black text-lg shadow-xl shadow-[#10b981]/30 hover:from-[#059669] hover:to-[#047857] transition-all"
           >
