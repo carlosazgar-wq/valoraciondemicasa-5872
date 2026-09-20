@@ -13,7 +13,6 @@ export const leads = sqliteTable("leads", {
   habitaciones: integer("habitaciones").notNull(),
   banos: integer("banos").notNull(),
   planta: text("planta"),
-  puerta: text("puerta"),
   estado: text("estado").notNull(), // excelente, bueno, regular, reformar
   extras: text("extras"), // JSON array: garaje, trastero, piscina, etc
   valorEstimadoMin: real("valor_estimado_min"),

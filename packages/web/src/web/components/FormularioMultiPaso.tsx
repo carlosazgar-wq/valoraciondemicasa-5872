@@ -14,7 +14,6 @@ interface FormData {
   tipoInmueble: string;
   superficie: string;
   planta: string;
-  puerta: string;
   // Paso 3: Características
   habitaciones: string;
   banos: string;
@@ -42,7 +41,6 @@ const EXTRAS = [
   { id: "jardin", label: "Jardín", icon: "🌳" },
   { id: "portero", label: "Portero", icon: "💂" },
   { id: "gym", label: "Gimnasio", icon: "💪" },
-  { id: "padel", label: "Pádel", icon: "🎾" },
 ];
 
 const TIPOS = [
@@ -83,14 +81,15 @@ function safeExtras(v: unknown): string[] {
 function parseGoogleDetail(result: any): {
   road: string; numero: string; cp: string; ciudad: string; lat: number; lng: number;
 } {
-  // Formato Geoapify (decodificado desde place_id en el backend)
+  const comps: any[] = result?.address_components ?? [];
+  const get = (type: string) => comps.find((c: any) => c.types.includes(type))?.long_name ?? "";
   return {
-    road: result?.street ?? "",
-    numero: result?.housenumber ?? "",
-    cp: result?.postcode ?? "",
-    ciudad: result?.city ?? "",
-    lat: result?.lat ?? 0,
-    lng: result?.lon ?? 0,
+    road: get("route"),
+    numero: get("street_number"),
+    cp: get("postal_code"),
+    ciudad: get("locality") || get("administrative_area_level_2") || get("administrative_area_level_1") || "",
+    lat: result?.geometry?.location?.lat ?? 0,
+    lng: result?.geometry?.location?.lng ?? 0,
   };
 }
 
@@ -164,9 +163,9 @@ function MiniMap({ lat, lng }: { lat: number; lng: number; direccion: string }) 
 }
 
 const INITIAL_DATA: FormData = {
-  calle: "", numero: "", codigoPostal: "", ciudad: "Madrid",
+  calle: "", numero: "", codigoPostal: "", ciudad: "",
   direccion: "", lat: null, lng: null,
-  tipoInmueble: "", superficie: "", planta: "", puerta: "",
+  tipoInmueble: "", superficie: "", planta: "segundo",
   habitaciones: "", banos: "", extras: [],
   estado: "",
   nombre: "", telefono: "", email: "", consentimientoCesion: true,
@@ -204,16 +203,13 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
     const e: Record<string, string> = {};
     if (p === 1) {
       if (!data.calle.trim()) e.calle = "Introduce la calle";
-      if (!data.numero.trim()) e.numero = "Indica el número de la casa o del portal";
-      else if (!/\d/.test(data.numero)) e.numero = "El número debe contener alguna cifra";
+      if (!data.numero.trim()) e.numero = "Indica el número";
       if (!data.codigoPostal.trim() || !/^\d{5}$/.test(data.codigoPostal.trim())) e.codigoPostal = "CP de 5 dígitos";
       if (!data.ciudad.trim()) e.ciudad = "Indica la ciudad";
     }
     if (p === 2) {
       if (!data.tipoInmueble) e.tipoInmueble = "Selecciona el tipo de inmueble";
       if (!data.superficie || parseInt(data.superficie) < 10) e.superficie = "Superficie mínima 10 m²";
-      if (!['adosado','chalet','casa'].includes(data.tipoInmueble) && data.tipoInmueble && !data.planta) e.planta = "Selecciona la planta";
-      if (data.tipoInmueble === 'piso' && !data.puerta.trim()) e.puerta = "Indica la puerta (A, B, Izquierda…)";
     }
     if (p === 3) {
       if (!data.habitaciones) e.habitaciones = "Indica el número de habitaciones";
@@ -411,7 +407,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                   autoComplete="off"
                   spellCheck={false}
                   className="flex-1 bg-transparent text-white py-4 pr-2 outline-none text-[15px] font-medium placeholder-[#3d5270]"
-                  placeholder="Gran Vía, Calle Mayor, Paseo de la Castellana…"
+                  placeholder="Gran Vía, Calle Mayor, Av. Diagonal…"
                   value={calleQuery}
                   onChange={e => handleCalleChange(e.target.value)}
                   onFocus={() => { if (calleQuery.length >= 2) setShowSuggestions(true); }}
@@ -537,7 +533,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                 style={{ background: '#16213a', border: errors.ciudad ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid #1e3a5f' }}
                 onFocus={e => (e.currentTarget.style.border = '1.5px solid rgba(99,179,237,0.4)')}
                 onBlur={e => (e.currentTarget.style.border = errors.ciudad ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid #1e3a5f')}
-                placeholder="Madrid"
+                placeholder="Madrid, Barcelona, Sevilla…"
                 value={data.ciudad}
                 onChange={e => updateDireccionField('ciudad', e.target.value)}
               />
@@ -607,28 +603,11 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                     Planta
                   </label>
                   <select className="form-input" value={data.planta} onChange={e => update('planta', e.target.value)}>
-                    <option value="">Selecciona la planta…</option>
                     {PLANTAS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
-                  {errors.planta && <p className="text-red-400 text-xs mt-1">{errors.planta}</p>}
                 </div>
               )}
             </div>
-            {data.tipoInmueble === 'piso' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  <Home size={14} className="inline mr-1 text-[#10b981]" />
-                  Puerta
-                </label>
-                <input
-                  type="text" className="form-input"
-                  placeholder="Ej: A, B, Izquierda, 3…"
-                  value={data.puerta}
-                  onChange={e => update('puerta', e.target.value)}
-                />
-                {errors.puerta && <p className="text-red-400 text-xs mt-1">{errors.puerta}</p>}
-              </div>
-            )}
           </div>
         )}
 
@@ -820,7 +799,7 @@ export function FormularioMultiPaso({ onSubmit, isLoading }: Props) {
                     </div>
                   </div>
                   <span className="text-xs text-gray-400 leading-relaxed">
-                    Autorizo que mis datos sean cedidos a la <strong className="text-gray-300">inmobiliaria mejor valorada de tu distrito en Madrid</strong> para que me contacten y realicen una valoración profesional gratuita y sin compromiso. La estimación online es orientativa; para conocer el valor exacto de tu vivienda te recomendamos una tasación profesional con el agente inmobiliario de mayor reputación en tu zona de Madrid.
+                    Autorizo que mis datos sean cedidos a la <strong className="text-gray-300">inmobiliaria mejor valorada de la zona</strong> para que me contacten y realicen una valoración profesional gratuita y sin compromiso. La estimación online es orientativa; para conocer el valor exacto de tu vivienda te recomendamos una tasación profesional con el agente inmobiliario de mayor reputación en tu zona.
                   </span>
                 </label>
               </div>

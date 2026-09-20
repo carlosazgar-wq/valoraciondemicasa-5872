@@ -1,5 +1,4 @@
 import app from "./api";
-import { metaParaRuta, esRutaConocida, inyectarMeta } from "./shared/seo";
 
 const port = Number(process.env.PORT ?? 3000);
 const distDir = `${import.meta.dir}/../dist`;
@@ -9,21 +8,6 @@ const server = Bun.serve({
   port,
   async fetch(request) {
     const url = new URL(request.url);
-
-    // Forzar HTTPS en producción (detrás de proxy Cloudflare/Fly)
-    // cf-visitor refleja el protocolo real usado por el visitante;
-    // x-forwarded-proto siempre es "https" internamente entre Cloudflare y Fly.
-    let scheme: string | null = null;
-    const cfVisitor = request.headers.get("cf-visitor");
-    if (cfVisitor) {
-      try { scheme = JSON.parse(cfVisitor).scheme; } catch {}
-    }
-    if (!scheme) scheme = request.headers.get("x-forwarded-proto");
-    if (scheme === "http" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
-      const publicHost = request.headers.get("x-forwarded-host") || url.host;
-      const redirectUrl = `https://${publicHost}${url.pathname}${url.search}`;
-      return Response.redirect(redirectUrl, 301);
-    }
 
     if (url.pathname.startsWith("/api")) {
       return app.fetch(request);
@@ -38,18 +22,7 @@ const server = Bun.serve({
 
     const index = Bun.file(indexPath);
     if (await index.exists()) {
-      let html = await index.text();
-
-      // Inyecta title/description/canonical reales en el HTML servido,
-      // para que Google los lea sin tener que ejecutar JavaScript.
-      const meta = metaParaRuta(url.pathname);
-      if (meta) html = inyectarMeta(html, meta);
-
-      // Rutas inexistentes: 404 real en lugar de "404 blando" con estado 200.
-      const status = esRutaConocida(url.pathname) ? 200 : 404;
-
-      return new Response(html, {
-        status,
+      return new Response(index, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }

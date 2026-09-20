@@ -207,44 +207,34 @@ const app = new Hono()
   .use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }))
   .get('/health', (c) => c.json({ status: 'ok' }, 200))
 
-  // Proxy Geoapify Address Autocomplete — evita exponer la API key en el frontend
-  // Sesgado hacia Madrid noroeste (Pozuelo/Aravaca/Las Rozas/Majadahonda/Boadilla/Alcobendas)
-  // pero sin restringir a esa zona: cualquier dirección de España sigue apareciendo.
+  // Proxy Google Places Autocomplete — evita exponer la API key en el frontend
   .get('/places', async (c) => {
     try {
       const q = c.req.query('q');
       if (!q || q.length < 2) return c.json({ predictions: [] }, 200);
-      const apiKey = process.env.GEOAPIFY_API_KEY;
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
       if (!apiKey) return c.json({ predictions: [] }, 200);
-      const url = `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(q)}&filter=countrycode:es&bias=proximity:-3.79,40.475&lang=es&format=json&limit=5&apiKey=${apiKey}`;
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(q)}&types=address&components=country:es&language=es&key=${apiKey}`;
       const res = await fetch(url);
       const data = await res.json() as any;
-      const predictions = (data.results ?? []).map((r: any) => {
-        const mainText = [r.street, r.housenumber].filter(Boolean).join(' ') || r.address_line1 || r.formatted || '';
-        const secondaryText = [r.postcode, r.city].filter(Boolean).join(' ') || r.address_line2 || '';
-        return {
-          place_id: Buffer.from(JSON.stringify({
-            street: r.street ?? '', housenumber: r.housenumber ?? '', postcode: r.postcode ?? '',
-            city: r.city ?? r.county ?? r.state ?? '', lat: r.lat ?? 0, lon: r.lon ?? 0,
-          })).toString('base64'),
-          description: r.formatted ?? [mainText, secondaryText].filter(Boolean).join(', '),
-          structured_formatting: { main_text: mainText, secondary_text: secondaryText },
-        };
-      });
-      return c.json({ predictions }, 200);
+      return c.json({ predictions: data.predictions ?? [] }, 200);
     } catch (e) {
       console.error('Places error:', e);
       return c.json({ predictions: [] }, 200);
     }
   })
 
-  // Decodifica el place_id (que ya contiene los datos completos de Geoapify, sin llamada extra)
+  // Proxy Google Places Details — obtiene lat/lng y campos de dirección
   .get('/places/detail', async (c) => {
     try {
       const placeId = c.req.query('place_id');
       if (!placeId) return c.json({ result: null }, 200);
-      const decoded = JSON.parse(Buffer.from(placeId, 'base64').toString('utf-8'));
-      return c.json({ result: decoded }, 200);
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      if (!apiKey) return c.json({ result: null }, 200);
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=geometry,address_components,formatted_address&language=es&key=${apiKey}`;
+      const res = await fetch(url);
+      const data = await res.json() as any;
+      return c.json({ result: data.result ?? null }, 200);
     } catch (e) {
       console.error('Places detail error:', e);
       return c.json({ result: null }, 200);
@@ -268,7 +258,6 @@ const app = new Hono()
         habitaciones: body.habitaciones,
         banos: body.banos,
         planta: body.planta ?? null,
-        puerta: body.puerta ?? null,
         estado: body.estado,
         extras: body.extras ? JSON.stringify(body.extras) : null,
         valorEstimadoMin: body.valorEstimadoMin ?? null,

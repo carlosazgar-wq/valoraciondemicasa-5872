@@ -5,7 +5,7 @@ import { Logo } from "../components/Logo";
 import { formatCurrency } from "../lib/valoracion";
 import {
   Users, TrendingUp, Phone, Mail, MapPin, Home,
-  Download, Search, Filter, Trash2, Edit3, Check, X, ChevronDown, Eye, CheckSquare
+  Download, Search, Filter, Trash2, Edit3, Check, X, ChevronDown, Eye
 } from "lucide-react";
 
 type Lead = {
@@ -145,9 +145,6 @@ function LeadRow({ lead, onUpdate, onDelete }: {
                 { icon: MapPin, label: "Dirección", value: lead.direccion },
                 { icon: Home, label: "Inmueble", value: `${lead.tipoInmueble} · ${lead.superficie}m² · ${lead.habitaciones}hab · ${lead.banos}baños` },
                 { icon: TrendingUp, label: "Estado", value: lead.estado },
-                ...(lead.planta ? [{ icon: Home, label: "Planta", value: lead.planta }] : []),
-                ...(lead.puerta ? [{ icon: Home, label: "Puerta", value: lead.puerta }] : []),
-                ...(lead.extras ? [{ icon: CheckSquare, label: "Extras", value: (() => { try { return JSON.parse(lead.extras).join(", ") || "Ninguno"; } catch { return "Ninguno"; } })() }] : []),
               ].map(row => (
                 <div key={row.label} className="bg-[#0a0f1e] rounded-xl p-3">
                   <div className="flex items-center gap-1.5 mb-1">
