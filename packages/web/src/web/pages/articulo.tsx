@@ -5,7 +5,7 @@ import { Calendar, Clock, ArrowLeft, ArrowRight } from "lucide-react";
 
 function inline(text: string) {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>')
+    .replace(/\*\*(.*?)\*\*/g, '<strongpolitica de privacidad class="text-white font-bold">$1</strong>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-[#10b981] font-semibold underline underline-offset-2 hover:text-[#34d399]">$1</a>');
 }
 
@@ -201,8 +201,8 @@ export default function ArticuloPage() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <a href="/"><Logo size={32} /></a>
             <div className="flex gap-6 text-sm text-gray-500">
-              <a href="#" className="hover:text-[#10b981] transition-colors">Política de Privacidad</a>
-              <a href="#" className="hover:text-[#10b981] transition-colors">Aviso Legal</a>
+              <a href="/privacidad" className="hover:text-[#10b981] transition-colors">Política de Privacidad</a>
+              <a href="/aviso-legal" className="hover:text-[#10b981] transition-colors">Aviso Legal</a>
             </div>
             <p className="text-gray-600 text-xs">© 2026 valoraciondemicasa.es · Todos los derechos reservados</p>
           </div>
