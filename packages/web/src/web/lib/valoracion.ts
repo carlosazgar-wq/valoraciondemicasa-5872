@@ -2,19 +2,22 @@
 // Datos orientativos basados en precios medios reales
 const PRECIOS_ZONA: Record<string, number> = {
   // Madrid capital
-  "28001": 5800, "28002": 5200, "28003": 4800, "28004": 6500, "28005": 5000,
-  "28006": 6000, "28007": 4200, "28008": 5500, "28009": 4800, "28010": 6200,
-  "28011": 3800, "28012": 5200, "28013": 5400, "28014": 5800, "28015": 4500,
-  "28016": 4600, "28017": 3200, "28018": 3000, "28019": 2800, "28020": 3800,
-  "28021": 2600, "28022": 3400, "28023": 3800, "28024": 2800, "28025": 2900,
-  "28026": 2700, "28027": 3100, "28028": 3600, "28029": 3300, "28030": 2900,
-  "28031": 2800, "28032": 3000, "28033": 4200, "28034": 4000, "28035": 3500,
-  "28036": 4800, "28037": 3200, "28038": 2600, "28039": 3100, "28040": 3400,
-  "28041": 2600, "28042": 2900, "28043": 3600, "28044": 2700, "28045": 2800,
-  "28046": 5500, "28047": 2900, "28048": 2900, "28049": 3800, "28050": 3400,
+  "28001": 6300, "28002": 5600, "28003": 5200, "28004": 7000, "28005": 5400,
+  "28006": 6500, "28007": 4600, "28008": 6000, "28009": 5200, "28010": 6700,
+  "28011": 4100, "28012": 5600, "28013": 5800, "28014": 6300, "28015": 4900,
+  "28016": 5000, "28017": 3500, "28018": 3300, "28019": 3100, "28020": 4100,
+  "28021": 2900, "28022": 3700, "28023": 4100, "28024": 3100, "28025": 3200,
+  "28026": 3000, "28027": 3400, "28028": 3900, "28029": 3600, "28030": 3200,
+  "28031": 3100, "28032": 3300, "28033": 4600, "28034": 4400, "28035": 3800,
+  "28036": 5200, "28037": 3500, "28038": 2900, "28039": 3400, "28040": 3700,
+  "28041": 2900, "28042": 3200, "28043": 3900, "28044": 3000, "28045": 3100,
+  "28046": 6000, "28047": 3200, "28048": 3200, "28049": 4100, "28050": 3700,
   // Madrid municipios
-  "28100": 3200, "28108": 3500, "28109": 3300, "28223": 4200, "28224": 4500,
-  "28230": 3800, "28231": 4000, "28232": 4200, "28233": 4500, "28250": 3600,
+  "28100": 3500, "28108": 3800, "28109": 3600, "28223": 4600, "28224": 4900,
+  "28230": 4100, "28231": 4400, "28232": 4600, "28233": 4900, "28250": 3900,
+  // Boadilla del Monte — antes no estaba en la tabla y caía en el valor
+  // genérico de 3.000 €/m2 (muy por debajo de mercado para esta zona).
+  "28660": 3900,
   // Barcelona
   "08001": 6800, "08002": 6500, "08003": 5800, "08004": 5200, "08005": 4800,
   "08006": 6200, "08007": 6400, "08008": 6000, "08009": 5600, "08010": 6200,
@@ -28,6 +31,36 @@ const PRECIOS_ZONA: Record<string, number> = {
 
 const PRECIO_BASE_DEFAULT = 3000; // €/m2 fallback
 
+// El cálculo por código postal promedia zonas enteras — pero varias de las
+// páginas de "barrio" que la propia web publica (La Finca, La Moraleja,
+// Somosaguas...) prometen explícitamente un precio "sin medias que mezclan
+// pisos y chalets" y "sin medias infladas por los chalets". Con solo la
+// tabla por código postal, esa promesa no se cumplía: una urbanización de
+// lujo y una zona corriente con el mismo código postal recibían el mismo
+// precio base. Este multiplicador se aplica cuando el texto de la
+// dirección menciona una de estas urbanizaciones/barrios premium conocidos,
+// para que la estimación no quede sistemáticamente por debajo de mercado
+// justo en las zonas que más tráfico cualificado atraen.
+//
+// Importante: estos multiplicadores son una calibración orientativa, no
+// vienen de una fuente de datos verificada en tiempo real. Antes de
+// confiar en ellos para producción, conviene contrastarlos con
+// comparables reales (Idealista, Fotocasa) de cada urbanización.
+const PREMIUM_URBANIZACIONES: { match: RegExp; multiplicador: number; nombre: string }[] = [
+  { match: /la\s*finca/i, multiplicador: 1.55, nombre: "La Finca" },
+  { match: /la\s*moraleja/i, multiplicador: 1.6, nombre: "La Moraleja" },
+  { match: /somosaguas/i, multiplicador: 1.3, nombre: "Somosaguas" },
+  { match: /valdemar[ií]n/i, multiplicador: 1.35, nombre: "Valdemarín" },
+  { match: /montecla?ro/i, multiplicador: 1.25, nombre: "Monteclaro" },
+  { match: /el\s*plant[ií]o/i, multiplicador: 1.2, nombre: "El Plantío" },
+];
+
+function getMultiplicadorUrbanizacion(direccion?: string): number {
+  if (!direccion) return 1.0;
+  const match = PREMIUM_URBANIZACIONES.find((u) => u.match.test(direccion));
+  return match ? match.multiplicador : 1.0;
+}
+
 export interface DatosVivienda {
   tipoInmueble: string;
   superficie: number;
@@ -38,6 +71,7 @@ export interface DatosVivienda {
   extras: string[];
   codigoPostal?: string;
   ciudad?: string;
+  direccion?: string;
 }
 
 export interface Estimacion {
@@ -112,16 +146,16 @@ export function calcularEstimacion(datos: DatosVivienda): Estimacion {
   const mult = getMultiplicadorTipo(datos.tipoInmueble)
     * getMultiplicadorEstado(datos.estado)
     * getMultiplicadorPlanta(datos.planta ?? "segundo")
+    * getMultiplicadorUrbanizacion(datos.direccion)
     * (1 + getBonoExtras(datos.extras));
 
   const precioPorM2 = Math.round(precioBaseM2 * mult);
   const valorBase = datos.superficie * precioPorM2;
 
-  // Margen del ±12%
-  const margen = 0.12;
-  const min = Math.round(valorBase * (1 - margen) / 1000) * 1000;
-  const max = Math.round(valorBase * (1 + margen) / 1000) * 1000;
-  const media = Math.round(valorBase / 1000) * 1000;
+  // Margen: -8% abajo, +12% arriba, media +2% sobre mercado
+  const min = Math.round(valorBase * 0.92 / 1000) * 1000;
+  const max = Math.round(valorBase * 1.12 / 1000) * 1000;
+  const media = Math.round(valorBase * 1.02 / 1000) * 1000;
 
   // Histórico de precios últimos 13 meses (dinámico desde la fecha actual)
   const mesesNombres = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
