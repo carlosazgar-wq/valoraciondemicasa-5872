@@ -113,9 +113,7 @@ export default function IndexPage() {
             <a href="/blog" className="text-gray-400 hover:text-white text-sm font-medium transition-colors">
               Blog
             </a>
-          </div>
-          
-            href="#formulario"
+          </div><a href="#formulario"
             className="px-4 py-2 rounded-xl bg-[#10b981] text-white text-sm font-bold hover:bg-[#059669] transition-colors"
           >
             Valorar mi casa
@@ -171,9 +169,7 @@ export default function IndexPage() {
               )}
 
               {/* CTA mobile */}
-              <div className="lg:hidden animate-fade-in-up delay-400">
-                
-                  href="#formulario"
+              <div className="lg:hidden animate-fade-in-up delay-400"><a href="#formulario"
                   className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-black text-lg shadow-xl shadow-[#10b981]/30 hover:from-[#059669] hover:to-[#047857] transition-all"
                 >
                   Calcular valor gratis
@@ -269,9 +265,7 @@ export default function IndexPage() {
           </h2>
           <p className="text-gray-400 text-lg mb-8 max-w-2xl mx-auto">
             Miles de propietarios madrileños ya han valorado su vivienda gratis. Únete y toma decisiones informadas.
-          </p>
-          
-            href="#formulario"
+          </p><a href="#formulario"
             className="inline-flex items-center gap-3 px-10 py-5 rounded-2xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-black text-xl shadow-2xl shadow-[#10b981]/30 hover:from-[#059669] hover:to-[#047857] transition-all animate-pulse-glow"
           >
             Calcular valor de mi casa
