@@ -437,7 +437,7 @@ export default function BarrioPage() {
       estado: formData.estado,
       extras,
       codigoPostal: formData.codigoPostal,
-      ciudad: formData.ciudad,
+      ciudad: formData.ciudad, direccion: formData.direccion,
     });
 
     try {
