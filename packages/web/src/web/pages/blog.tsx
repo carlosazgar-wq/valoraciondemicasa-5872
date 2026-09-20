@@ -635,8 +635,8 @@ export default function BlogPage() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <a href="/"><Logo size={32} /></a>
             <div className="flex gap-6 text-sm text-gray-500">
-              <a href="#" className="hover:text-[#10b981] transition-colors">Política de Privacidad</a>
-              <a href="#" className="hover:text-[#10b981] transition-colors">Aviso Legal</a>
+              <a href="/privacidad" className="hover:text-[#10b981] transition-colors">Política de Privacidad</a>
+              <a href="/aviso-legal" className="hover:text-[#10b981] transition-colors">Aviso Legal</a>
             </div>
             <p className="text-gray-600 text-xs">© 2026 valoraciondemicasa.es · Todos los derechos reservados</p>
           </div>
