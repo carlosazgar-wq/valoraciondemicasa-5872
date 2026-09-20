@@ -13,12 +13,15 @@ export const leads = sqliteTable("leads", {
   habitaciones: integer("habitaciones").notNull(),
   banos: integer("banos").notNull(),
   planta: text("planta"),
+  puerta: text("puerta"),
   estado: text("estado").notNull(), // excelente, bueno, regular, reformar
   extras: text("extras"), // JSON array: garaje, trastero, piscina, etc
   valorEstimadoMin: real("valor_estimado_min"),
   valorEstimadoMax: real("valor_estimado_max"),
   valorEstimado: real("valor_estimado"),
-  consentimientoCesion: integer("consentimiento_cesion", { mode: "boolean" }).default(true),
+  // RGPD: el consentimiento debe ser expreso (checkbox desmarcado por
+  // defecto), nunca asumido. Antes el valor por defecto era `true`.
+  consentimientoCesion: integer("consentimiento_cesion", { mode: "boolean" }).default(false),
   ip: text("ip"),
   estado_lead: text("estado_lead").default("nuevo"), // nuevo, contactado, vendido, descartado
   notas: text("notas"),
