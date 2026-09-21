@@ -8,6 +8,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Email al que se avisa, al instante, de cada nuevo lead. Antes nadie se
+// enteraba de un lead nuevo hasta entrar manualmente al panel /admin — con
+// el volumen de tráfico que puede recibir la web, eso significa leads que
+// se enfrían sin que nadie los llame a tiempo. Este aviso se dispara desde
+// el propio servidor justo después de guardar el lead, así que llega
+// siempre, sin depender de que el navegador del visitante siga abierto.
+const LEAD_NOTIFY_EMAIL = 'azgar4@yahoo.com';
+
 // ─────────────────────────────────────────────────────────────────────────
 // Autenticación del panel de administración (/admin).
 //
@@ -244,6 +252,73 @@ function generarEmailHTML(data: {
 </html>`;
 }
 
+// Email de aviso interno (a LEAD_NOTIFY_EMAIL) cada vez que entra un lead
+// nuevo — distinto del email que se le envía al propio cliente con su
+// valoración (generarEmailHTML). Este es deliberadamente simple: solo
+// enseña los datos de contacto y de la vivienda para poder llamar cuanto
+// antes, sin gráficos ni cálculos de hipoteca.
+function generarEmailNotificacionLead(lead: {
+  id: number;
+  nombre: string;
+  telefono: string;
+  email: string;
+  direccion: string;
+  codigoPostal?: string | null;
+  ciudad?: string | null;
+  tipoInmueble: string;
+  superficie: number;
+  habitaciones: number;
+  banos: number;
+  estado: string;
+  valorEstimado?: number | null;
+}): string {
+  const fmt = (n: number) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(n) + ' €';
+  const fila = (label: string, valor: string) => `
+    <tr>
+      <td style="color:#6b7280;font-size:13px;padding:6px 12px;border-bottom:1px solid #1f2937">${label}</td>
+      <td style="color:white;font-size:13px;font-weight:700;padding:6px 12px;border-bottom:1px solid #1f2937;text-align:right">${valor}</td>
+    </tr>`;
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuevo lead — ValoracionDeMiCasa.es</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;padding:32px 16px">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#111827;border-radius:16px;overflow:hidden">
+  <tr>
+    <td style="background:linear-gradient(135deg,#0a0f1e 0%,#0d3d2e 100%);padding:24px 28px">
+      <p style="color:#10b981;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:1px;margin:0 0 4px">Nuevo lead recibido</p>
+      <h1 style="color:white;font-size:22px;font-weight:900;margin:0">${lead.nombre}</h1>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:20px 28px 8px">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        ${fila('Teléfono', lead.telefono)}
+        ${fila('Email', lead.email)}
+        ${fila('Dirección', `${lead.direccion}${lead.codigoPostal ? ' · ' + lead.codigoPostal : ''}${lead.ciudad ? ' · ' + lead.ciudad : ''}`)}
+        ${fila('Tipo de inmueble', lead.tipoInmueble)}
+        ${fila('Superficie', `${lead.superficie} m²`)}
+        ${fila('Hab. / Baños', `${lead.habitaciones} / ${lead.banos}`)}
+        ${fila('Estado', lead.estado)}
+        ${lead.valorEstimado ? fila('Valor estimado', fmt(lead.valorEstimado)) : ''}
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:16px 28px 28px">
+      <p style="color:#6b7280;font-size:11px;margin:0">Lead #${lead.id} · Recibido justo ahora desde valoraciondemicasa.es</p>
+    </td>
+  </tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
 const app = new Hono()
   .basePath('api')
   .use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }))
@@ -359,6 +434,22 @@ const app = new Hono()
         consentimientoCesion: body.consentimientoCesion === true,
         ip,
       }).returning();
+
+      // Aviso al instante por email. Se hace en un try/catch aparte y a
+      // propósito NO detiene ni retrasa la respuesta al visitante: si Resend
+      // falla o tarda, el lead ya está guardado en la base de datos y sigue
+      // visible en /admin — lo único que se pierde es el aviso inmediato,
+      // nunca el lead en sí.
+      if (lead) {
+        resend.emails.send({
+          from: 'ValoracionDeMiCasa.es <info@valoraciondemicasa.es>',
+          to: LEAD_NOTIFY_EMAIL,
+          subject: `🔔 Nuevo lead: ${lead.nombre} — ${lead.direccion}`,
+          html: generarEmailNotificacionLead(lead),
+          replyTo: lead.email || undefined,
+        }).catch((e) => console.error('Error enviando aviso de lead:', e));
+      }
+
       return c.json({ success: true, lead }, 201);
     } catch (e) {
       console.error(e);
